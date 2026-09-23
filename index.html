@@ -203,6 +203,7 @@
     padding: 30px 22px 26px;
     position:relative;
     box-shadow: 0 16px 0 -8px rgba(107,74,82,0.1), 0 18px 30px rgba(107,74,82,0.14);
+    --body-font-size: 15.5px;
   }
   .paper::before{
     content:"";
@@ -236,13 +237,13 @@
   }
 
   .letter-body p{
-    font-size: 15.5px;
+    font-size: var(--body-font-size, 15.5px);
     line-height: 2;
     color: var(--ink);
     margin: 0 0 20px;
     opacity:0;
     transform: translateY(10px);
-    transition: opacity 0.7s ease, transform 0.7s ease;
+    transition: opacity 0.7s ease, transform 0.7s ease, font-size 0.25s ease;
   }
   .letter-body p.in{
     opacity:1;
@@ -285,6 +286,36 @@
   }
   .replay-btn.in{ opacity:1; }
   .replay-btn:active{ transform: scale(0.96); }
+
+  .floating-toolbar{
+    position: fixed;
+    right: 16px;
+    bottom: 18px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    z-index: 60;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.4s ease;
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+  .floating-toolbar.show{ opacity: 1; pointer-events: auto; }
+  .floating-toolbar button{
+    width: 42px;
+    height: 42px;
+    border-radius: 50%;
+    border: 2px solid var(--ink);
+    background: var(--paper);
+    color: var(--ink);
+    font-family: 'Gowun Dodum', sans-serif;
+    font-size: 13px;
+    font-weight: bold;
+    box-shadow: 0 4px 10px rgba(107,74,82,0.18);
+    cursor: pointer;
+  }
+  .floating-toolbar button:active{ transform: scale(0.92); }
+  #musicToggle{ font-size: 17px; }
 
   .heart-surprise{
     margin-top: 32px;
@@ -392,6 +423,12 @@
 <body>
 
 <div class="bg-deco" id="bgDeco"></div>
+
+<div class="floating-toolbar" id="floatingToolbar">
+  <button id="musicToggle" aria-label="음악 켜기">🔈</button>
+  <button id="fontInc" aria-label="글씨 크게">가+</button>
+  <button id="fontDec" aria-label="글씨 작게">가−</button>
+</div>
 
 <!-- ===== COVER ===== -->
 <section id="cover">
@@ -503,6 +540,7 @@
     cover.classList.add('hide');
     setTimeout(function(){
       letterSec.classList.add('show');
+      document.getElementById('floatingToolbar').classList.add('show');
       window.scrollTo(0,0);
       revealLetter();
     }, 500);
@@ -556,6 +594,7 @@
 
   replayBtn.addEventListener('click', function(){
     letterSec.classList.remove('show');
+    document.getElementById('floatingToolbar').classList.remove('show');
     document.querySelectorAll('.letter-body p').forEach(function(p){ p.classList.remove('in'); });
     document.getElementById('signature').classList.remove('in');
     document.getElementById('heartSurprise').classList.remove('in');
@@ -567,6 +606,73 @@
     void progressFill.offsetWidth;
     progressFill.style.transition = 'width 2.6s linear';
     startOpening();
+  });
+
+  /* ---- font size control ---- */
+  var FONT_SIZES = [13, 14.5, 15.5, 17, 19, 21];
+  var fontSizeIndex = 2;
+  var paperEl = document.querySelector('.paper');
+  function applyFontSize(){
+    paperEl.style.setProperty('--body-font-size', FONT_SIZES[fontSizeIndex] + 'px');
+  }
+  document.getElementById('fontDec').addEventListener('click', function(){
+    fontSizeIndex = Math.max(0, fontSizeIndex - 1);
+    applyFontSize();
+  });
+  document.getElementById('fontInc').addEventListener('click', function(){
+    fontSizeIndex = Math.min(FONT_SIZES.length - 1, fontSizeIndex + 1);
+    applyFontSize();
+  });
+
+  /* ---- bright, cute background melody (generated, no external file needed) ---- */
+  var audioCtx = null;
+  var musicOn = false;
+  var musicTimer = null;
+  var melodyNotes = [
+    {f:523.25, d:0.20}, {f:659.25, d:0.20}, {f:783.99, d:0.20}, {f:659.25, d:0.20},
+    {f:523.25, d:0.20}, {f:587.33, d:0.20}, {f:659.25, d:0.40},
+    {f:392.00, d:0.20}, {f:523.25, d:0.20}, {f:659.25, d:0.20}, {f:783.99, d:0.40},
+    {f:698.46, d:0.20}, {f:659.25, d:0.20}, {f:587.33, d:0.20}, {f:523.25, d:0.55}
+  ];
+
+  function playNote(freq, time, dur){
+    var osc = audioCtx.createOscillator();
+    var gain = audioCtx.createGain();
+    osc.type = 'triangle';
+    osc.frequency.value = freq;
+    gain.gain.setValueAtTime(0.0001, time);
+    gain.gain.linearRampToValueAtTime(0.11, time + 0.03);
+    gain.gain.exponentialRampToValueAtTime(0.0001, time + dur);
+    osc.connect(gain).connect(audioCtx.destination);
+    osc.start(time);
+    osc.stop(time + dur + 0.05);
+  }
+
+  function scheduleLoop(){
+    if(!musicOn) return;
+    var now = audioCtx.currentTime;
+    var t = now;
+    for(var i = 0; i < melodyNotes.length; i++){
+      var n = melodyNotes[i];
+      playNote(n.f, t, n.d * 0.88);
+      t += n.d;
+    }
+    musicTimer = setTimeout(scheduleLoop, (t - now) * 1000 + 150);
+  }
+
+  document.getElementById('musicToggle').addEventListener('click', function(){
+    if(!audioCtx){
+      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    }
+    if(audioCtx.state === 'suspended'){ audioCtx.resume(); }
+    musicOn = !musicOn;
+    this.textContent = musicOn ? '🔊' : '🔈';
+    this.setAttribute('aria-label', musicOn ? '음악 끄기' : '음악 켜기');
+    if(musicOn){
+      scheduleLoop();
+    } else {
+      clearTimeout(musicTimer);
+    }
   });
 
   startOpening();
